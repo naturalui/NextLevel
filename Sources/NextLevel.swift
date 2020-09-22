@@ -2463,9 +2463,11 @@ extension NextLevel {
         if let formatDictionary = self.photoConfiguration.avcaptureDictionary() {
             
             if self.photoConfiguration.isRawCaptureEnabled {
+                #if !( targetEnvironment(simulator) )
                 if let _ = photoOutput.availableRawPhotoPixelFormatTypes.first {
                     // TODO
                 }
+                #endif
             }
             
             let photoSettings = AVCapturePhotoSettings(format: formatDictionary)
