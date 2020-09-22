@@ -329,6 +329,8 @@ extension CameraViewController {
             break
         case .authorized:
             break
+        case .limited:
+            break
         @unknown default:
             fatalError("unknown authorization type")
         }
@@ -628,7 +630,6 @@ extension CameraViewController: NextLevelVideoDelegate {
     func nextLevel(_ nextLevel: NextLevel, willProcessRawVideoSampleBuffer sampleBuffer: CMSampleBuffer, onQueue queue: DispatchQueue) {
     }
     
-    @available(iOS 11.0, *)
     func nextLevel(_ nextLevel: NextLevel, willProcessFrame frame: AnyObject, timestamp: TimeInterval, onQueue queue: DispatchQueue) {
     }
     
@@ -687,19 +688,17 @@ extension CameraViewController: NextLevelVideoDelegate {
 // MARK: - NextLevelPhotoDelegate
 
 extension CameraViewController: NextLevelPhotoDelegate {
-    
-    // photo
-    func nextLevel(_ nextLevel: NextLevel, willCapturePhotoWithConfiguration photoConfiguration: NextLevelPhotoConfiguration) {
+    func nextLevel(_ nextLevel: NextLevel, output: AVCapturePhotoOutput, willBeginCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, photoConfiguration: NextLevelPhotoConfiguration) {
     }
     
-    func nextLevel(_ nextLevel: NextLevel, didCapturePhotoWithConfiguration photoConfiguration: NextLevelPhotoConfiguration) {
+    func nextLevel(_ nextLevel: NextLevel, output: AVCapturePhotoOutput, willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings, photoConfiguration: NextLevelPhotoConfiguration) {
     }
     
-    func nextLevel(_ nextLevel: NextLevel, didProcessPhotoCaptureWith photoDict: [String : Any]?, photoConfiguration: NextLevelPhotoConfiguration) {
+    func nextLevel(_ nextLevel: NextLevel, output: AVCapturePhotoOutput, didCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings, photoConfiguration: NextLevelPhotoConfiguration) {
+    }
+    
+    func nextLevel(_ nextLevel: NextLevel, didFinishProcessingPhoto photo: AVCapturePhoto, photoDict: [String : Any], photoConfiguration: NextLevelPhotoConfiguration) {
         
-        if let dictionary = photoDict,
-            let photoData = dictionary[NextLevelPhotoJPEGKey] {
-
             PHPhotoLibrary.shared().performChanges({
                 
                 let albumAssetCollection = self.albumAssetCollection(withTitle: NextLevelAlbumTitle)
@@ -713,7 +712,7 @@ extension CameraViewController: NextLevelPhotoDelegate {
                 if success1 == true {
                     if let albumAssetCollection = self.albumAssetCollection(withTitle: NextLevelAlbumTitle) {
                         PHPhotoLibrary.shared().performChanges({
-                            if let data = photoData as? Data,
+                            if let data = photoDict[NextLevelPhotoFileDataKey] as? Data,
                                let photoImage = UIImage(data: data) {
                                 let assetChangeRequest = PHAssetChangeRequest.creationRequestForAsset(from: photoImage)
                                 let assetCollectionChangeRequest = PHAssetCollectionChangeRequest(for: albumAssetCollection)
@@ -734,17 +733,11 @@ extension CameraViewController: NextLevelPhotoDelegate {
                 }
                     
             })
-        }
-        
     }
     
-    func nextLevel(_ nextLevel: NextLevel, didProcessRawPhotoCaptureWith photoDict: [String : Any]?, photoConfiguration: NextLevelPhotoConfiguration) {
-    }
-
     func nextLevelDidCompletePhotoCapture(_ nextLevel: NextLevel) {
     }
     
-    @available(iOS 11.0, *)
     func nextLevel(_ nextLevel: NextLevel, didFinishProcessingPhoto photo: AVCapturePhoto) {
     }
     

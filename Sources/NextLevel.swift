@@ -59,6 +59,7 @@ public enum NextLevelDeviceType: Int, CustomStringConvertible {
     case wideAngleCamera
     case telephotoCamera
     case duoCamera
+    case dualWideCamera
     case ultraWideAngleCamera
     case tripleCamera
     #if USE_TRUE_DEPTH
@@ -74,19 +75,17 @@ public enum NextLevelDeviceType: Int, CustomStringConvertible {
         case .wideAngleCamera:
             return AVCaptureDevice.DeviceType.builtInWideAngleCamera
         case .duoCamera:
-            if #available(iOS 11.0, *) {
-                return AVCaptureDevice.DeviceType.builtInDualCamera
-            } else {
-                return AVCaptureDevice.DeviceType.builtInDuoCamera
-            }
+            return AVCaptureDevice.DeviceType.builtInDualCamera
             #if USE_TRUE_DEPTH
         case .trueDepthCamera:
-            if #available(iOS 11.1, *) {
-                return AVCaptureDevice.DeviceType.builtInTrueDepthCamera
+            return AVCaptureDevice.DeviceType.builtInTrueDepthCamera
+            #endif
+        case .dualWideCamera:
+            if #available(iOS 13.0, *) {
+                return AVCaptureDevice.DeviceType.builtInDualWideCamera
             } else {
                 return AVCaptureDevice.DeviceType(rawValue: "Unavailable")
             }
-            #endif
         case .ultraWideAngleCamera:
             if #available(iOS 13.0, *) {
                 return AVCaptureDevice.DeviceType.builtInUltraWideCamera
@@ -113,6 +112,8 @@ public enum NextLevelDeviceType: Int, CustomStringConvertible {
                 return "Telephoto Camera"
             case .duoCamera:
                 return "Duo Camera"
+            case .dualWideCamera:
+                return "Dual Wide Camera"
             case .ultraWideAngleCamera:
                 return "Ultra Wide Angle Camera"
             case .tripleCamera:
@@ -267,7 +268,6 @@ public class NextLevel: NSObject {
     /// Configuration for photos
     public var photoConfiguration: NextLevelPhotoConfiguration
     
-    @available(iOS 11.0, *)
     /// Configuration property for augmented reality
     public var arConfiguration: NextLevelARConfiguration? {
         get {
@@ -368,10 +368,8 @@ public class NextLevel: NSObject {
     public var isRunning: Bool {
         get {
             #if USE_ARKIT
-            if #available(iOS 11.0, *) {
-                if self.captureMode == .arKit {
-                    return self._arRunning
-                }
+            if self.captureMode == .arKit {
+                return self._arRunning
             }
             #endif
             if let session = self._captureSession {
@@ -426,7 +424,6 @@ public class NextLevel: NSObject {
     internal var _photoOutput: AVCapturePhotoOutput?
     #if USE_TRUE_DEPTH
     internal var _depthDataOutput: Any?
-    @available(iOS 11.0, *)
     internal var depthDataOutput: AVCaptureDepthDataOutput? {
         get {
             return self._depthDataOutput as? AVCaptureDepthDataOutput
@@ -473,9 +470,7 @@ public class NextLevel: NSObject {
         self.audioConfiguration = NextLevelAudioConfiguration()
         self.photoConfiguration = NextLevelPhotoConfiguration()
         #if USE_ARKIT
-        if #available(iOS 11.0, *) {
-            self._arConfiguration = NextLevelARConfiguration()
-        }
+        self._arConfiguration = NextLevelARConfiguration()
         #endif
         
         super.init()
@@ -594,9 +589,7 @@ extension NextLevel {
         
         if self.captureMode == .arKit {
             #if USE_ARKIT
-            if #available(iOS 11.0, *) {
-                setupARSession()
-            }
+            setupARSession()
             #endif
         } else {
             guard self._captureSession == nil else {
@@ -626,13 +619,11 @@ extension NextLevel {
         }
         
         #if USE_ARKIT
-        if #available(iOS 11.0, *) {
-            if self.captureMode == .arKit {
-                self.executeClosureAsyncOnSessionQueueIfNecessary {
-                    self.arConfiguration?.session?.pause()
-                    self._arRunning = false
-                    self._recordingSession = nil
-                }
+        if self.captureMode == .arKit {
+            self.executeClosureAsyncOnSessionQueueIfNecessary {
+                self.arConfiguration?.session?.pause()
+                self._arRunning = false
+                self._recordingSession = nil
             }
         }
         #endif
@@ -672,7 +663,6 @@ extension NextLevel {
         }
     }
     
-    @available(iOS 11.0, *)
     internal func setupARSession() {
         #if USE_ARKIT
         self.executeClosureAsyncOnSessionQueueIfNecessary {
@@ -1025,23 +1015,25 @@ extension NextLevel {
             self._videoOutput?.alwaysDiscardsLateVideoFrames = false
             
             var videoSettings = [String(kCVPixelBufferPixelFormatTypeKey):Int(kCVPixelFormatType_32BGRA)]
-            if let formatTypes = self._videoOutput?.availableVideoPixelFormatTypes {
-                var supportsFullRange = false
-                var supportsVideoRange = false
-                for format in formatTypes {
-                    if format == Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
-                        supportsFullRange = true
+            #if !( targetEnvironment(simulator) )
+                if let formatTypes = self._videoOutput?.availableVideoPixelFormatTypes {
+                    var supportsFullRange = false
+                    var supportsVideoRange = false
+                    for format in formatTypes {
+                        if format == Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
+                            supportsFullRange = true
+                        }
+                        if format == Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
+                            supportsVideoRange = true
+                        }
                     }
-                    if format == Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
-                        supportsVideoRange = true
+                    if supportsFullRange {
+                        videoSettings[String(kCVPixelBufferPixelFormatTypeKey)] = Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
+                    } else if supportsVideoRange {
+                        videoSettings[String(kCVPixelBufferPixelFormatTypeKey)] = Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
                     }
                 }
-                if supportsFullRange {
-                    videoSettings[String(kCVPixelBufferPixelFormatTypeKey)] = Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
-                } else if supportsVideoRange {
-                    videoSettings[String(kCVPixelBufferPixelFormatTypeKey)] = Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
-                }
-            }
+            #endif
             self._videoOutput?.videoSettings = videoSettings
         }
         
@@ -1134,20 +1126,18 @@ extension NextLevel {
             return false
         }
         
-        if #available(iOS 11.0, *) {
-            // setup depth streaming
-            if self.depthDataOutput == nil {
-                self.depthDataOutput = AVCaptureDepthDataOutput()
-                if let depthDataOutput = self.depthDataOutput {
-                    let depthDataQueue = DispatchQueue(label: NextLevelDepthDataQueueIdentifier)
-                    depthDataOutput.setDelegate(self, callbackQueue: depthDataQueue)
-                }
-                
-                if let session = self._captureSession, let depthDataOutput = self.depthDataOutput {
-                    if session.canAddOutput(depthDataOutput) {
-                        session.addOutput(depthDataOutput)
-                        return true
-                    }
+        // setup depth streaming
+        if self.depthDataOutput == nil {
+            self.depthDataOutput = AVCaptureDepthDataOutput()
+            if let depthDataOutput = self.depthDataOutput {
+                let depthDataQueue = DispatchQueue(label: NextLevelDepthDataQueueIdentifier)
+                depthDataOutput.setDelegate(self, callbackQueue: depthDataQueue)
+            }
+            
+            if let session = self._captureSession, let depthDataOutput = self.depthDataOutput {
+                if session.canAddOutput(depthDataOutput) {
+                    session.addOutput(depthDataOutput)
+                    return true
                 }
             }
         }
@@ -1161,16 +1151,14 @@ extension NextLevel {
             return false
         }
         
-        if #available(iOS 12.0, *) {
-            guard let photoOutput = self._photoOutput else {
-                return false
-            }
-            
-            // enables portrait effects matte
-            if photoOutput.isPortraitEffectsMatteDeliverySupported {
-                photoOutput.isPortraitEffectsMatteDeliveryEnabled = true
-                return true
-            }
+        guard let photoOutput = self._photoOutput else {
+            return false
+        }
+        
+        // enables portrait effects matte
+        if photoOutput.isPortraitEffectsMatteDeliverySupported {
+            photoOutput.isPortraitEffectsMatteDeliveryEnabled = true
+            return true
         }
         print("NextLevel, couldn't enable portrait effects matte delivery in the output")
         return false
@@ -2222,17 +2210,14 @@ extension NextLevel {
     /// Checks if video capture is supported by the hardware.
     public var isVideoCaptureSupported: Bool {
         get {
-            var deviceTypes: [AVCaptureDevice.DeviceType] = [AVCaptureDevice.DeviceType.builtInWideAngleCamera,
-                                                             AVCaptureDevice.DeviceType.builtInTelephotoCamera]
-            if #available(iOS 11.0, *) {
-                deviceTypes.append(.builtInDualCamera)
-                if #available(iOS 11.1, *) {
-                    deviceTypes.append(.builtInTrueDepthCamera)
-                }
-            } else {
-                deviceTypes.append(.builtInDuoCamera)
+            var deviceTypes: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera,
+                                                             .builtInTelephotoCamera,
+                                                             .builtInDualCamera,
+                                                             .builtInTrueDepthCamera]
+            if #available(iOS 13.0, *) {
+                deviceTypes.append(contentsOf: [.builtInUltraWideCamera, .builtInDualWideCamera, .builtInTripleCamera])
             }
-            
+                
             let discoverySession = AVCaptureDevice.DiscoverySession(deviceTypes: deviceTypes, mediaType: AVMediaType.video, position: .unspecified)
             return discoverySession.devices.count > 0
         }
@@ -2323,7 +2308,7 @@ extension NextLevel {
             } else if let videoFrame = self._lastVideoFrame {
                 
                 // append exif metadata
-                videoFrame.append(metadataAdditions: NextLevel.tiffMetadata())
+                videoFrame.append(metadataAdditions: NextLevel.tiffMetadata)
                 if let metadata = videoFrame.metadata() {
                     if photoDict == nil {
                         photoDict = [:]
@@ -2471,35 +2456,38 @@ extension NextLevel {
     
     /// Triggers a photo capture.
     public func capturePhoto() {
-        if let photoOutput = self._photoOutput,
-            let _ = photoOutput.connection(with: AVMediaType.video) {
-            if let formatDictionary = self.photoConfiguration.avcaptureDictionary() {
-                
-                let photoSettings = AVCapturePhotoSettings(format: formatDictionary)
-                photoSettings.isHighResolutionPhotoEnabled = self.photoConfiguration.isHighResolutionEnabled
-                photoOutput.isHighResolutionCaptureEnabled = self.photoConfiguration.isHighResolutionEnabled
-                
-                if #available(iOS 11.0, *) {
-                    #if USE_TRUE_DEPTH
-                    if photoOutput.isDepthDataDeliverySupported {
-                        photoOutput.isDepthDataDeliveryEnabled = self.photoConfiguration.isDepthDataEnabled
-                        photoSettings.embedsDepthDataInPhoto = self.photoConfiguration.isDepthDataEnabled
-                    }
-                    #endif
+        guard let photoOutput = self._photoOutput, let _ = photoOutput.connection(with: AVMediaType.video) else {
+            return
+        }
+        
+        if let formatDictionary = self.photoConfiguration.avcaptureDictionary() {
+            
+            if self.photoConfiguration.isRawCaptureEnabled {
+                if let _ = photoOutput.availableRawPhotoPixelFormatTypes.first {
+                    // TODO
                 }
-                
-                if #available(iOS 12.0, *) {
-                    if photoOutput.isPortraitEffectsMatteDeliverySupported {
-                        photoOutput.isPortraitEffectsMatteDeliveryEnabled = self.photoConfiguration.isPortraitEffectsMatteEnabled
-                    }
-                }
-                
-                if self.isFlashAvailable {
-                    photoSettings.flashMode = self.photoConfiguration.flashMode
-                }
-                
-                photoOutput.capturePhoto(with: photoSettings, delegate: self)
             }
+            
+            let photoSettings = AVCapturePhotoSettings(format: formatDictionary)
+            photoSettings.isHighResolutionPhotoEnabled = self.photoConfiguration.isHighResolutionEnabled
+            photoOutput.isHighResolutionCaptureEnabled = self.photoConfiguration.isHighResolutionEnabled
+                        
+            #if USE_TRUE_DEPTH
+            if photoOutput.isDepthDataDeliverySupported {
+                photoOutput.isDepthDataDeliveryEnabled = self.photoConfiguration.isDepthDataEnabled
+                photoSettings.embedsDepthDataInPhoto = self.photoConfiguration.isDepthDataEnabled
+            }
+            #endif
+            
+            if photoOutput.isPortraitEffectsMatteDeliverySupported {
+                photoOutput.isPortraitEffectsMatteDeliveryEnabled = self.photoConfiguration.isPortraitEffectsMatteEnabled
+            }
+            
+            if self.isFlashAvailable {
+                photoSettings.flashMode = self.photoConfiguration.flashMode
+            }
+            
+            photoOutput.capturePhoto(with: photoSettings, delegate: self)
         }
     }
     
@@ -2764,103 +2752,62 @@ extension NextLevel: AVCaptureFileOutputRecordingDelegate {
 
 extension NextLevel: AVCapturePhotoCaptureDelegate {
     
-    public func photoOutput(_ captureOutput: AVCapturePhotoOutput, willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
+    public func photoOutput(_ output: AVCapturePhotoOutput, willBeginCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
         DispatchQueue.main.async {
-            self.photoDelegate?.nextLevel(self, willCapturePhotoWithConfiguration: self.photoConfiguration)
+            self.photoDelegate?.nextLevel(self, output: output, willBeginCaptureFor: resolvedSettings, photoConfiguration: self.photoConfiguration)
+        }
+    }
+
+    public func photoOutput(_ output: AVCapturePhotoOutput, willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
+        DispatchQueue.main.async {
+            self.photoDelegate?.nextLevel(self, output: output, willCapturePhotoFor: resolvedSettings, photoConfiguration: self.photoConfiguration)
         }
     }
     
     public func photoOutput(_ output: AVCapturePhotoOutput, didCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
         DispatchQueue.main.async {
-            self.photoDelegate?.nextLevel(self, didCapturePhotoWithConfiguration: self.photoConfiguration)
+            self.photoDelegate?.nextLevel(self, output: output, didCapturePhotoFor: resolvedSettings, photoConfiguration: self.photoConfiguration)
         }
     }
     
-    
-    public func photoOutput(_ captureOutput: AVCapturePhotoOutput, didFinishProcessingPhoto photoSampleBuffer: CMSampleBuffer?, previewPhoto previewPhotoSampleBuffer: CMSampleBuffer?, resolvedSettings: AVCaptureResolvedPhotoSettings, bracketSettings: AVCaptureBracketedStillImageSettings?, error: Error?) {
-        if let sampleBuffer = photoSampleBuffer {
-            
-            // output dictionary
-            var photoDict: [String: Any] = [:]
-            
-            // append tiff metadata
-            sampleBuffer.append(metadataAdditions: NextLevel.tiffMetadata())
-            
-            // add exif metadata
-            if let metadata = sampleBuffer.metadata() {
-                photoDict[NextLevelPhotoMetadataKey] = metadata
-            }
-            
-            // add JPEG, thumbnail
-            let imageData = AVCapturePhotoOutput.jpegPhotoDataRepresentation(forJPEGSampleBuffer: sampleBuffer, previewPhotoSampleBuffer: previewPhotoSampleBuffer)
-            if let data = imageData {
-                photoDict[NextLevelPhotoJPEGKey] = data
-            }
-            
-            // add explicit thumbnail
-            //let thumbnailData = AVCapturePhotoOutput.jpegPhotoDataRepresentation(forJPEGSampleBuffer: previewBuffer, previewPhotoSampleBuffer: nil)
-            //if let tData = thumbnailData {
-            //    photoDict[NextLevelPhotoThumbnailKey] = tData
-            //}
-            
+    public func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        // output dictionary
+        var photoDict: [String: Any] = [:]
+        
+        // exif metadata
+        photoDict[NextLevelPhotoMetadataKey] = photo.metadata
+        NextLevel.tiffMetadata.forEach { (key, value) in photoDict[key] = value }
+        
+        // add file data
+        let imageData = photo.fileDataRepresentation()
+        if let data = imageData {
+            photoDict[NextLevelPhotoFileDataKey] = data
+        }
+        
+        DispatchQueue.main.async {
+            self.photoDelegate?.nextLevel(self, didFinishProcessingPhoto: photo, photoDict: photoDict, photoConfiguration: self.photoConfiguration)
+        }
+                
+        if let portraitEffectsMatte = photo.portraitEffectsMatte {
             DispatchQueue.main.async {
-                self.photoDelegate?.nextLevel(self, didProcessPhotoCaptureWith: photoDict, photoConfiguration: self.photoConfiguration)
+                self.portraitEffectsMatteDelegate?.portraitEffectsMatteOutput(self, didOutput: portraitEffectsMatte)
             }
         }
     }
+
     
-    public func photoOutput(_ captureOutput: AVCapturePhotoOutput, didFinishProcessingRawPhoto rawSampleBuffer: CMSampleBuffer?, previewPhoto previewPhotoSampleBuffer: CMSampleBuffer?, resolvedSettings: AVCaptureResolvedPhotoSettings, bracketSettings: AVCaptureBracketedStillImageSettings?, error: Error?) {
-        if let sampleBuffer = rawSampleBuffer {
-            
-            // output dictionary
-            var photoDict: [String: Any] = [:]
-            
-            // append tiff metadata
-            sampleBuffer.append(metadataAdditions: NextLevel.tiffMetadata())
-            
-            // add exif metadata
-            if let metadata = sampleBuffer.metadata() {
-                photoDict[NextLevelPhotoMetadataKey] = metadata
-            }
-            
-            // add Raw + thumbnail
-            let imageData = AVCapturePhotoOutput.dngPhotoDataRepresentation(forRawSampleBuffer: sampleBuffer, previewPhotoSampleBuffer: previewPhotoSampleBuffer)
-            if let data = imageData {
-                photoDict[NextLevelPhotoRawImageKey] = data
-            }
-            
-            // add explicit thumbnail
-            // TODO based on configuration pixel buffer
-            //let thumbnailData = AVCapturePhotoOutput.jpegPhotoDataRepresentation(forJPEGSampleBuffer: previewBuffer, previewPhotoSampleBuffer: nil)
-            //if let tData = thumbnailData {
-            //    photoDict[NextLevelPhotoThumbnailKey] = tData
-            //}
-            
-            DispatchQueue.main.async {
-                self.photoDelegate?.nextLevel(self, didProcessRawPhotoCaptureWith: photoDict, photoConfiguration: self.photoConfiguration)
-            }
-        }
-    }
-    
-    public func photoOutput(_ captureOutput: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
+    public func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
         DispatchQueue.main.async {
             self.photoDelegate?.nextLevelDidCompletePhotoCapture(self)
         }
     }
     
-    @available(iOS 11.0, *)
-    public func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        DispatchQueue.main.async {
-            self.photoDelegate?.nextLevel(self, didFinishProcessingPhoto: photo)
-        }
-        
-        if #available(iOS 12.0, *){
-            if let portraitEffectsMatte = photo.portraitEffectsMatte {
-                DispatchQueue.main.async {
-                    self.portraitEffectsMatteDelegate?.portraitEffectsMatteOutput(self, didOutput: portraitEffectsMatte)
-                }
-            }
-        }
+    // live photo
+    
+    public func photoOutput(_ output: AVCapturePhotoOutput, didFinishRecordingLivePhotoMovieForEventualFileAt outputFileURL: URL, resolvedSettings: AVCaptureResolvedPhotoSettings) {
+    }
+    
+    public func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingLivePhotoToMovieFileAt outputFileURL: URL, duration: CMTime, photoDisplayTime: CMTime, resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
     }
     
 }
@@ -2868,7 +2815,6 @@ extension NextLevel: AVCapturePhotoCaptureDelegate {
 // MARK: - AVCaptureDepthDataOutputDelegate
 
 #if USE_TRUE_DEPTH
-@available(iOS 11.0, *)
 extension NextLevel: AVCaptureDepthDataOutputDelegate {
     
     public func depthDataOutput(_ output: AVCaptureDepthDataOutput, didOutput depthData: AVDepthData, timestamp: CMTime, connection: AVCaptureConnection) {
@@ -2886,7 +2832,6 @@ extension NextLevel: AVCaptureDepthDataOutputDelegate {
 #if USE_ARKIT
 // MARK: - ARSession
 
-@available(iOS 11.0, *)
 extension NextLevel {
     
     public func arSession(_ session: ARSession, didUpdate frame: ARFrame) {
